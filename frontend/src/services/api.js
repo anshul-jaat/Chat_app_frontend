@@ -48,6 +48,9 @@ export const userService = {
   updateProfile: (data) => api.put('/api/users/profile', data),
   changePassword: (passwords) => api.put('/api/users/change-password', passwords),
   searchUsers: (query) => api.get(`/api/users/search?query=${encodeURIComponent(query)}`),
+  heartbeat: () => api.post('/api/users/heartbeat'),
+  setOffline: () => api.post('/api/users/offline'),
+  getUserPresence: (userId) => api.get(`/api/users/presence/${userId}`),
 };
 
 // --- Friend Request & Friends Services ---

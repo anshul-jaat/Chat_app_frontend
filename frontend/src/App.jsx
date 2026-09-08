@@ -3,7 +3,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { SocketProvider, useSocket } from './context/SocketContext.jsx';
 import { CallProvider } from './context/CallContext.jsx';
-import { conversationService, storyService, friendService } from './services/api.js';
+import { conversationService, storyService, friendService, userService } from './services/api.js';
 
 import Navbar from './components/layout/Navbar.jsx';
 import ProfileModal from './components/layout/ProfileModal.jsx';
@@ -30,6 +30,28 @@ function MainApp() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCreateStoryOpen, setIsCreateStoryOpen] = useState(false);
   const [selectedStoryGroup, setSelectedStoryGroup] = useState(null);
+
+  // Heartbeat loop (every 20s) to keep user presence online in real time
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    userService.heartbeat().catch(() => {});
+
+    const heartbeatInterval = setInterval(() => {
+      userService.heartbeat().catch(() => {});
+    }, 20000);
+
+    const handleUnload = () => {
+      navigator.sendBeacon?.('/api/users/offline');
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [isAuthenticated]);
 
   // Load conversations and stories when authenticated
   useEffect(() => {
@@ -69,14 +91,22 @@ function MainApp() {
     const interval = setInterval(async () => {
       try {
         const convRes = await conversationService.getConversations();
-        setConversations(convRes.data || []);
+        const updatedList = convRes.data || [];
+        setConversations(updatedList);
+
+        if (activeConversation) {
+          const matching = updatedList.find((c) => c._id === activeConversation._id);
+          if (matching) {
+            setActiveConversation((prev) => ({ ...prev, ...matching }));
+          }
+        }
       } catch (err) {
         // silently ignore polling errors
       }
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeConversation?._id]);
 
   const handleDeleteConversation = async (conversationId) => {
     try {

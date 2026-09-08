@@ -3,7 +3,8 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 import { useCall } from '../../context/CallContext.jsx';
-import { messageService, conversationService } from '../../services/api.js';
+import { messageService, conversationService, userService } from '../../services/api.js';
+import { formatTimeAgo } from '../../utils/timeAgo.js';
 import MessageBubble from './MessageBubble.jsx';
 import MessageInput from './MessageInput.jsx';
 import {
@@ -16,6 +17,8 @@ import {
   Lock,
   Trash2,
   AlertTriangle,
+  Check,
+  CheckCheck,
 } from 'lucide-react';
 
 export default function ChatArea({
@@ -35,6 +38,7 @@ export default function ChatArea({
   const [showMenu, setShowMenu] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null); // 'clear' | 'delete' | null
   const [isDeleting, setIsDeleting] = useState(false);
+  const [otherUserPresence, setOtherUserPresence] = useState(null);
   const messagesEndRef = useRef(null);
 
   const getOtherParticipant = (conv) => {
@@ -43,11 +47,44 @@ export default function ChatArea({
   };
 
   const otherUser = getOtherParticipant(activeConversation);
-  const online = isUserOnline(otherUser._id);
+
+  // Determine whether the other user is online and compute last seen
+  const online = Boolean(
+    isUserOnline(otherUser._id) ||
+    otherUserPresence?.isOnline ||
+    otherUser.isOnline ||
+    (otherUserPresence?.lastSeen && (Date.now() - new Date(otherUserPresence.lastSeen).getTime()) < 65000) ||
+    (otherUser.lastSeen && (Date.now() - new Date(otherUser.lastSeen).getTime()) < 65000)
+  );
+
+  const lastSeenTime = otherUserPresence?.lastSeen || otherUser.lastSeen;
+
   const isTyping =
     activeConversation &&
     typingUsers[activeConversation._id] &&
     Object.keys(typingUsers[activeConversation._id]).length > 0;
+
+  // Poll other user presence periodically (every 4s) so status updates dynamically
+  useEffect(() => {
+    if (!otherUser?._id) return;
+    let isMounted = true;
+
+    const checkPresence = async () => {
+      try {
+        const res = await userService.getUserPresence(otherUser._id);
+        if (isMounted && res.data) {
+          setOtherUserPresence(res.data);
+        }
+      } catch (err) {}
+    };
+
+    checkPresence();
+    const presenceInterval = setInterval(checkPresence, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(presenceInterval);
+    };
+  }, [otherUser?._id]);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -249,9 +286,14 @@ export default function ChatArea({
               {isTyping ? (
                 <span className="text-emerald-400 font-bold animate-pulse">typing...</span>
               ) : online ? (
-                <span className="text-emerald-400 font-medium">Online</span>
+                <span className="text-emerald-400 font-medium flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Online
+                </span>
+              ) : lastSeenTime ? (
+                <span className="text-zinc-400">Last seen {formatTimeAgo(lastSeenTime)}</span>
               ) : (
-                'Offline'
+                <span className="text-zinc-500">Offline</span>
               )}
             </p>
           </div>
@@ -397,6 +439,7 @@ export default function ChatArea({
                 key={msg._id || Math.random()}
                 message={msg}
                 isMe={isMe}
+                otherUsername={otherUser.username}
                 onDeleteMessage={handleDeleteMessage}
                 onCallBack={(callType) => {
                   startCall({
@@ -410,6 +453,40 @@ export default function ChatArea({
             );
           })
         )}
+
+        {/* Latest Outgoing Message Seen Status Banner */}
+        {messages.length > 0 && (() => {
+          const lastMsg = messages[messages.length - 1];
+          const lastMsgIsMe = lastMsg.sender?._id?.toString() === user?._id?.toString();
+          if (!lastMsgIsMe) return null;
+
+          const isSeen = Boolean(
+            lastMsg.seenAt ||
+            (Array.isArray(lastMsg.seenBy) && lastMsg.seenBy.length > 0) ||
+            (Array.isArray(lastMsg.readBy) && lastMsg.readBy.some((id) => (id._id || id).toString() !== user?._id?.toString())) ||
+            (Array.isArray(lastMsg.readBy) && lastMsg.readBy.length > 0)
+          );
+
+          const seenTimestamp = lastMsg.seenAt || (lastMsg.seenBy && lastMsg.seenBy[0]?.seenAt) || (isSeen ? lastMsg.updatedAt : null);
+
+          return (
+            <div className="flex items-center justify-end px-3 py-1 text-[11px] font-medium">
+              {isSeen ? (
+                <span className="flex items-center gap-1.5 text-cyan-400 dark:text-cyan-300">
+                  <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>
+                    Seen by {otherUser.username || 'recipient'} {seenTimestamp ? `• ${formatTimeAgo(seenTimestamp)}` : ''}
+                  </span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 opacity-60">
+                  <Check className="w-3.5 h-3.5 stroke-[2]" />
+                  <span>Delivered • {formatTimeAgo(lastMsg.createdAt)}</span>
+                </span>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Live Typing Indicator Bubble */}
         {isTyping && (

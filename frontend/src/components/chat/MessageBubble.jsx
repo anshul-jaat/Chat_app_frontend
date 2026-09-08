@@ -14,12 +14,23 @@ import {
   Trash2,
 } from 'lucide-react';
 
-export default function MessageBubble({ message, isMe, onCallBack, onDeleteMessage }) {
+import { formatTimeAgo } from '../../utils/timeAgo.js';
+
+export default function MessageBubble({ message, isMe, onCallBack, onDeleteMessage, otherUsername }) {
   const { isDark } = useTheme();
   const [showLightbox, setShowLightbox] = useState(false);
 
-  const { content, type, file, createdAt, readBy = [] } = message;
-  const isRead = readBy.length > 1; // Read by other participant
+  const { content, type, file, createdAt, readBy = [], seenAt, seenBy = [], updatedAt } = message;
+
+  // Has the recipient seen/read this message?
+  const isRead = Boolean(
+    seenAt ||
+    (Array.isArray(seenBy) && seenBy.length > 0) ||
+    (Array.isArray(readBy) && readBy.some(id => (id._id || id).toString() !== (message.sender?._id || message.sender)?.toString())) ||
+    (Array.isArray(readBy) && readBy.length > 0)
+  );
+
+  const seenTime = seenAt || (seenBy && seenBy[0]?.seenAt) || (isRead ? updatedAt : null);
 
   const formatTime = (dateStr) => {
     if (!dateStr) return '';
@@ -160,27 +171,43 @@ export default function MessageBubble({ message, isMe, onCallBack, onDeleteMessa
         {/* Timestamp, Delete Action, and Read Receipts */}
         <div
           className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] ${
-            isMe ? 'text-white/80' : 'opacity-60'
+            isMe ? 'text-white/85' : 'opacity-60'
           }`}
         >
           {isMe && onDeleteMessage && (
             <button
               onClick={() => onDeleteMessage(message._id)}
-              className="opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 hover:text-rose-200 text-white/70"
+              className="opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 hover:text-rose-200 text-white/70 mr-0.5"
               title="Delete Message"
             >
               <Trash2 className="w-3 h-3" />
             </button>
           )}
+
           <span>{formatTime(createdAt)}</span>
+          {createdAt && (
+            <span className="opacity-75">({formatTimeAgo(createdAt)})</span>
+          )}
+
           {isMe && (
-            <span>
+            <div
+              className="flex items-center gap-1 ml-0.5"
+              title={isRead ? `Seen by ${otherUsername || 'user'} ${formatTimeAgo(seenTime)}` : 'Sent'}
+            >
               {isRead ? (
-                <CheckCheck className="w-3.5 h-3.5 text-cyan-300 stroke-[2.5]" />
+                <>
+                  <CheckCheck className="w-3.5 h-3.5 text-cyan-300 stroke-[2.5]" />
+                  <span className="text-[10px] text-cyan-200 font-bold tracking-tight">
+                    Seen {formatTimeAgo(seenTime)}
+                  </span>
+                </>
               ) : (
-                <Check className="w-3.5 h-3.5 opacity-70 stroke-[2]" />
+                <>
+                  <Check className="w-3.5 h-3.5 opacity-75 stroke-[2]" />
+                  <span className="text-[10px] opacity-75 font-medium">Sent</span>
+                </>
               )}
-            </span>
+            </div>
           )}
         </div>
       </div>

@@ -98,7 +98,11 @@ export default function ChatSidebar({
           filteredConversations.map((conv) => {
             const other = getOtherParticipant(conv);
             const isSelected = activeConversation?._id === conv._id;
-            const online = isUserOnline(other._id);
+            const online = Boolean(
+              isUserOnline(other._id) ||
+              other.isOnline ||
+              (other.lastSeen && (Date.now() - new Date(other.lastSeen).getTime()) < 65000)
+            );
             const lastMsg = conv.lastMessage;
 
             let lastMsgText = 'No messages yet';
@@ -163,8 +167,15 @@ export default function ChatSidebar({
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] opacity-70 truncate max-w-[180px]">
-                      {lastMsgText}
+                    <p className="text-[11px] opacity-70 truncate max-w-[180px] flex items-center gap-1">
+                      {lastMsg?.sender?._id?.toString() === user?._id?.toString() && (
+                        (lastMsg.seenAt || (lastMsg.readBy && lastMsg.readBy.length > 0)) ? (
+                          <CheckCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0 stroke-[2.5]" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 opacity-60 shrink-0 stroke-[2]" />
+                        )
+                      )}
+                      <span className="truncate">{lastMsgText}</span>
                     </p>
                   </div>
                 </div>
