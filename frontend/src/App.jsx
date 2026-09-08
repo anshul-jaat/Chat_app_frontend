@@ -62,6 +62,34 @@ function MainApp() {
     }
   };
 
+  // Auto-sync conversations in background (every 4s) to ensure realtime updates even on serverless hosts
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const convRes = await conversationService.getConversations();
+        setConversations(convRes.data || []);
+      } catch (err) {
+        // silently ignore polling errors
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  const handleDeleteConversation = async (conversationId) => {
+    try {
+      await conversationService.deleteConversation(conversationId);
+      setConversations((prev) => prev.filter((c) => c._id !== conversationId));
+      if (activeConversation?._id === conversationId) {
+        setActiveConversation(null);
+      }
+    } catch (err) {
+      console.warn('Delete conversation error:', err);
+    }
+  };
+
   // Handle incoming message to update conversation list lastMessage
   useEffect(() => {
     if (incomingMessage) {
@@ -149,6 +177,7 @@ function MainApp() {
             conversations={conversations}
             activeConversation={activeConversation}
             onSelectConversation={(conv) => setActiveConversation(conv)}
+            onDeleteConversation={handleDeleteConversation}
             storiesGrouped={storiesGrouped}
             onOpenCreateStory={() => setIsCreateStoryOpen(true)}
             onOpenStoryViewer={(group) => setSelectedStoryGroup(group)}
@@ -164,7 +193,10 @@ function MainApp() {
         >
           <ChatArea
             activeConversation={activeConversation}
-            onBack={() => setActiveConversation(null)}
+            onBack={() => {
+              setActiveConversation(null);
+              loadInitialData();
+            }}
             onOpenProfile={() => setIsProfileModalOpen(true)}
             onOpenFriends={() => setIsFriendsModalOpen(true)}
           />

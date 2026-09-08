@@ -39,6 +39,7 @@ export default function CallModal() {
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   // Attach local stream to local video element
   useEffect(() => {
@@ -47,10 +48,14 @@ export default function CallModal() {
     }
   }, [localStream, callState]);
 
-  // Attach remote stream to remote video element
+  // Attach remote stream to remote video and audio elements
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
     }
   }, [remoteStream, callState]);
 
@@ -187,6 +192,8 @@ export default function CallModal() {
   // 3. CONNECTED CALL SCREEN
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black select-none animate-in fade-in">
+      {/* Dedicated audio element ensuring voice is always audible */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       <div className="relative w-full h-full flex flex-col justify-between overflow-hidden">
         {/* Remote Video or Audio Avatar */}
         <div className="absolute inset-0 z-0 flex items-center justify-center bg-[#07070a]">

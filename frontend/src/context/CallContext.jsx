@@ -38,9 +38,22 @@ export const CallProvider = ({ children }) => {
   const outgoingTimeoutRef = useRef(null);
   const incomingSignalRef = useRef(null);
   const remoteTargetUserIdRef = useRef(null);
+  const iceCandidatesQueueRef = useRef([]);
 
   const callStateRef = useRef(callState);
   const callTypeRef = useRef(callType);
+
+  const processQueuedIceCandidates = async (pc) => {
+    if (!pc) return;
+    while (iceCandidatesQueueRef.current.length > 0) {
+      const candidate = iceCandidatesQueueRef.current.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('Error processing queued ice candidate:', err);
+      }
+    }
+  };
 
   useEffect(() => {
     callStateRef.current = callState;
@@ -74,9 +87,15 @@ export const CallProvider = ({ children }) => {
     remoteTargetUserIdRef.current = toUserId;
 
     pc.ontrack = (event) => {
-      console.log('📡 Received remote track:', event.streams[0]);
+      console.log('📡 Received remote track:', event.track?.kind);
       if (event.streams && event.streams[0]) {
         setRemoteStream(event.streams[0]);
+      } else if (event.track) {
+        setRemoteStream((prev) => {
+          const stream = prev ? prev : new MediaStream();
+          stream.addTrack(event.track);
+          return stream;
+        });
       }
     };
 
@@ -142,6 +161,7 @@ export const CallProvider = ({ children }) => {
       if (pcRef.current && data.signal) {
         try {
           await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.signal));
+          await processQueuedIceCandidates(pcRef.current);
           setCallState('connected');
           startDurationTimer();
         } catch (err) {
@@ -151,12 +171,15 @@ export const CallProvider = ({ children }) => {
     };
 
     const handleIceCandidate = async (data) => {
-      if (pcRef.current && data.candidate) {
+      if (!data?.candidate) return;
+      if (pcRef.current && pcRef.current.remoteDescription) {
         try {
           await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
         } catch (err) {
           console.error('Error adding received ice candidate:', err);
         }
+      } else {
+        iceCandidatesQueueRef.current.push(data.candidate);
       }
     };
 
@@ -227,6 +250,7 @@ export const CallProvider = ({ children }) => {
     setIsScreenSharing(false);
     incomingSignalRef.current = null;
     remoteTargetUserIdRef.current = null;
+    iceCandidatesQueueRef.current = [];
   };
 
   // Initiate outgoing call
@@ -338,6 +362,7 @@ export const CallProvider = ({ children }) => {
 
       if (incomingSignalRef.current) {
         await pc.setRemoteDescription(new RTCSessionDescription(incomingSignalRef.current));
+        await processQueuedIceCandidates(pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 

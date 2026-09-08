@@ -64,6 +64,7 @@ export const conversationService = {
   getConversations: () => api.get('/api/conversations'),
   createOrGet: (userId) => api.post('/api/conversations', { userId }),
   getById: (id) => api.get(`/api/conversations/${id}`),
+  deleteConversation: (id) => api.delete(`/api/conversations/${id}`),
 };
 
 // --- Message Services ---
@@ -72,6 +73,8 @@ export const messageService = {
     api.get(`/api/messages/${conversationId}?page=${page}`),
   sendMessage: (messageData) => api.post('/api/messages', messageData),
   markAsRead: (conversationId) => api.put(`/api/messages/read/${conversationId}`),
+  deleteMessage: (id) => api.delete(`/api/messages/${id}`),
+  clearChat: (conversationId) => api.delete(`/api/messages/clear/${conversationId}`),
 };
 
 // --- Story / Status Services ---

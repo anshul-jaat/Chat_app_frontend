@@ -11,9 +11,10 @@ import {
   VideoOff,
   Phone,
   Video,
+  Trash2,
 } from 'lucide-react';
 
-export default function MessageBubble({ message, isMe, onCallBack }) {
+export default function MessageBubble({ message, isMe, onCallBack, onDeleteMessage }) {
   const { isDark } = useTheme();
   const [showLightbox, setShowLightbox] = useState(false);
 
@@ -36,7 +37,7 @@ export default function MessageBubble({ message, isMe, onCallBack }) {
   return (
     <div className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} my-1.5 px-2`}>
       <div
-        className={`relative max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-xs transition-all ${
+        className={`group/bubble relative max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-xs transition-all ${
           isMe
             ? isDark
               ? 'bg-emerald-600 text-white rounded-br-xs'
@@ -156,12 +157,21 @@ export default function MessageBubble({ message, isMe, onCallBack }) {
           <p className="text-xs font-normal mt-1 opacity-90 break-words">{content}</p>
         )}
 
-        {/* Timestamp and Read Receipts */}
+        {/* Timestamp, Delete Action, and Read Receipts */}
         <div
-          className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
+          className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] ${
             isMe ? 'text-white/80' : 'opacity-60'
           }`}
         >
+          {isMe && onDeleteMessage && (
+            <button
+              onClick={() => onDeleteMessage(message._id)}
+              className="opacity-0 group-hover/bubble:opacity-100 transition-opacity p-0.5 hover:text-rose-200 text-white/70"
+              title="Delete Message"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
           <span>{formatTime(createdAt)}</span>
           {isMe && (
             <span>

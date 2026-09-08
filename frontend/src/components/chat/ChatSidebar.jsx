@@ -3,12 +3,13 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 import StoryTray from '../stories/StoryTray.jsx';
-import { Search, Plus, MessageSquare, Check, CheckCheck } from 'lucide-react';
+import { Search, Plus, MessageSquare, Check, CheckCheck, Trash2 } from 'lucide-react';
 
 export default function ChatSidebar({
   conversations = [],
   activeConversation,
   onSelectConversation,
+  onDeleteConversation,
   storiesGrouped = [],
   onOpenCreateStory,
   onOpenStoryViewer,
@@ -18,6 +19,7 @@ export default function ChatSidebar({
   const { isDark } = useTheme();
   const { isUserOnline } = useSocket();
   const [searchQuery, setSearchQuery] = useState('');
+  const [convToDelete, setConvToDelete] = useState(null);
 
   // Get other participant in a 1-on-1 chat
   const getOtherParticipant = (conv) => {
@@ -112,7 +114,7 @@ export default function ChatSidebar({
               <div
                 key={conv._id}
                 onClick={() => onSelectConversation(conv)}
-                className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all ${
+                className={`group flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all ${
                   isSelected
                     ? isDark
                       ? 'bg-[#121217] border border-emerald-500/30 shadow-xs'
@@ -141,9 +143,23 @@ export default function ChatSidebar({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="text-xs font-extrabold truncate">{other.username}</h3>
-                    <span className="text-[10px] opacity-60">
-                      {formatMessageTime(conv.updatedAt || lastMsg?.createdAt)}
-                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] opacity-60">
+                        {formatMessageTime(conv.updatedAt || lastMsg?.createdAt)}
+                      </span>
+                      {onDeleteConversation && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConvToDelete(conv);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-rose-500/20 text-zinc-500 hover:text-rose-400"
+                          title="Delete Conversation"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between">
@@ -157,6 +173,50 @@ export default function ChatSidebar({
           })
         )}
       </div>
+
+      {/* Confirmation Modal for Delete Conversation */}
+      {convToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in select-none">
+          <div
+            className={`w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border ${
+              isDark ? 'bg-[#0d0d13] border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/15 text-rose-500 flex items-center justify-center mb-4 border border-rose-500/30">
+              <Trash2 className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-base font-extrabold mb-1.5">Delete Conversation?</h3>
+            <p className="text-xs opacity-70 leading-relaxed mb-6">
+              Delete chat with <span className="font-bold text-emerald-400">{getOtherParticipant(convToDelete).username}</span>? All messages will be permanently deleted.
+            </p>
+
+            <div className="w-full flex items-center gap-3">
+              <button
+                onClick={() => setConvToDelete(null)}
+                className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                  isDark
+                    ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-300'
+                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
+                }`}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={async () => {
+                  const id = convToDelete._id;
+                  setConvToDelete(null);
+                  if (onDeleteConversation) await onDeleteConversation(id);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-md shadow-rose-600/30 transition-transform active:scale-95"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

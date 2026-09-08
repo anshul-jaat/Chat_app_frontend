@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useTheme } from '../../context/ThemeContext.jsx';
 import { useSocket } from '../../context/SocketContext.jsx';
 import { useCall } from '../../context/CallContext.jsx';
-import { messageService } from '../../services/api.js';
+import { messageService, conversationService } from '../../services/api.js';
 import MessageBubble from './MessageBubble.jsx';
 import MessageInput from './MessageInput.jsx';
 import {
@@ -14,6 +14,8 @@ import {
   MessageSquare,
   ShieldCheck,
   Lock,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function ChatArea({
@@ -30,6 +32,9 @@ export default function ChatArea({
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null); // 'clear' | 'delete' | null
+  const [isDeleting, setIsDeleting] = useState(false);
   const messagesEndRef = useRef(null);
 
   const getOtherParticipant = (conv) => {
@@ -84,10 +89,69 @@ export default function ChatArea({
     }
   }, [incomingMessage, activeConversation?._id]);
 
-  // Scroll to bottom on new messages
+  // Smart polling fallback (every 2.5s) to guarantee real-time sync across clients
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+    if (!activeConversation?._id) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await messageService.getMessages(activeConversation._id);
+        const fetched = res.data || [];
+        setMessages((prev) => {
+          if (
+            fetched.length !== prev.length ||
+            (fetched.length > 0 && fetched[fetched.length - 1]?._id !== prev[prev.length - 1]?._id)
+          ) {
+            return fetched;
+          }
+          return prev;
+        });
+      } catch (err) {
+        // silently ignore polling errors
+      }
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
+  }, [activeConversation?._id]);
+
+  const handleDeleteMessage = async (messageId) => {
+    try {
+      await messageService.deleteMessage(messageId);
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    } catch (err) {
+      console.warn('Failed to delete message:', err);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!activeConversation) return;
+    try {
+      setIsDeleting(true);
+      await messageService.clearChat(activeConversation._id);
+      setMessages([]);
+      setConfirmAction(null);
+      setShowMenu(false);
+    } catch (err) {
+      console.warn('Failed to clear chat:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!activeConversation) return;
+    try {
+      setIsDeleting(true);
+      await conversationService.deleteConversation(activeConversation._id);
+      setConfirmAction(null);
+      setShowMenu(false);
+      if (onBack) onBack();
+    } catch (err) {
+      console.warn('Failed to delete conversation:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleSendMessage = async ({ content, type = 'text', file = {} }) => {
     if (!activeConversation) return;
@@ -193,8 +257,8 @@ export default function ChatArea({
           </div>
         </div>
 
-        {/* Call Actions */}
-        <div className="flex items-center gap-1.5">
+        {/* Call & More Actions */}
+        <div className="flex items-center gap-1.5 relative">
           {/* Audio Call */}
           <button
             onClick={() =>
@@ -234,6 +298,63 @@ export default function ChatArea({
           >
             <Video className="w-4 h-4" />
           </button>
+
+          {/* More Options Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className={`p-2.5 rounded-xl border transition-all duration-150 ${
+                isDark
+                  ? 'bg-[#101015] border-[#22222b] hover:bg-zinc-800 text-zinc-300'
+                  : 'bg-slate-100 border-slate-200 hover:bg-slate-200 text-slate-700'
+              }`}
+              title="Chat Options"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+
+            {showMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setShowMenu(false)}
+                />
+                <div
+                  className={`absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl py-1.5 z-40 animate-in fade-in zoom-in-95 ${
+                    isDark
+                      ? 'bg-[#0f0f15] border-zinc-800 text-zinc-200 shadow-black'
+                      : 'bg-white border-slate-200 text-slate-800'
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setConfirmAction('clear');
+                    }}
+                    className={`w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 transition-colors ${
+                      isDark ? 'hover:bg-zinc-800/70' : 'hover:bg-slate-100'
+                    }`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Clear Messages</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setConfirmAction('delete');
+                    }}
+                    className={`w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 transition-colors text-rose-500 ${
+                      isDark ? 'hover:bg-rose-500/10' : 'hover:bg-rose-50'
+                    }`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Conversation</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -276,6 +397,7 @@ export default function ChatArea({
                 key={msg._id || Math.random()}
                 message={msg}
                 isMe={isMe}
+                onDeleteMessage={handleDeleteMessage}
                 onCallBack={(callType) => {
                   startCall({
                     targetUserId: otherUser._id,
@@ -313,6 +435,53 @@ export default function ChatArea({
         onSendMessage={handleSendMessage}
         onTyping={handleTyping}
       />
+
+      {/* Confirmation Modal for Clear / Delete */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in select-none">
+          <div
+            className={`w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border ${
+              isDark ? 'bg-[#0d0d13] border-zinc-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/15 text-rose-500 flex items-center justify-center mb-4 border border-rose-500/30">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-base font-extrabold mb-1.5">
+              {confirmAction === 'clear' ? 'Clear Chat History?' : 'Delete Entire Conversation?'}
+            </h3>
+
+            <p className="text-xs opacity-70 leading-relaxed mb-6">
+              {confirmAction === 'clear'
+                ? 'All messages in this chat will be deleted. This action cannot be undone.'
+                : 'This chat and all sent media/messages will be permanently removed.'}
+            </p>
+
+            <div className="w-full flex items-center gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                disabled={isDeleting}
+                className={`flex-1 py-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                  isDark
+                    ? 'border-zinc-800 hover:bg-zinc-800 text-zinc-300'
+                    : 'border-slate-200 hover:bg-slate-100 text-slate-700'
+                }`}
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmAction === 'clear' ? handleClearChat : handleDeleteConversation}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-md shadow-rose-600/30 transition-transform active:scale-95 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : confirmAction === 'clear' ? 'Clear' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
