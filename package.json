@@ -4,6 +4,8 @@
   "description": "frontend/\r    ├── src/\r    │   ├── components/\r    │   ├── pages/\r    │   ├── hooks/\r    │   ├── services/\r    │   ├── context/\r    │   └── utils/\r    └── package.json",
   "main": "index.js",
   "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "dev": "cd frontend && npm run dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
