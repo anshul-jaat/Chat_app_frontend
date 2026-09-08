@@ -154,7 +154,7 @@ function MainApp() {
 
   return (
     <div
-      className={`h-screen w-screen flex flex-col overflow-hidden transition-colors ${
+      className={`h-[100dvh] w-full max-w-[100vw] flex flex-col overflow-hidden transition-colors ${
         isDark ? 'bg-black text-zinc-100' : 'bg-slate-50 text-slate-800'
       }`}
     >

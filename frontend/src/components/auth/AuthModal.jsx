@@ -17,7 +17,7 @@ export default function AuthModal() {
   const { login, register, loginWithData } = useAuth();
   const { isDark } = useTheme();
 
-  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'otp'
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'otp' | 'forgot' | 'reset_otp'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,6 +47,16 @@ export default function AuthModal() {
           setSuccessMsg('Email verified successfully! You can now sign in.');
           setMode('login');
         }
+      } else if (mode === 'forgot') {
+        const res = await authService.forgotPassword(email);
+        setSuccessMsg(res.data?.message || 'Password reset OTP code sent to your email.');
+        setMode('reset_otp');
+      } else if (mode === 'reset_otp') {
+        await authService.resetPassword({ email, otp, newPassword: password });
+        setSuccessMsg('Password reset successfully! Please sign in with your new password.');
+        setPassword('');
+        setOtp('');
+        setMode('login');
       }
     } catch (err) {
       setError(
@@ -74,7 +84,7 @@ export default function AuthModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
       <div
-        className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 md:p-8 transition-all relative overflow-hidden ${
+        className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 md:p-8 transition-all relative overflow-y-auto max-h-[92dvh] ${
           isDark
             ? 'bg-[#09090c] border-[#22222a] text-zinc-100'
             : 'bg-white border-slate-200 text-slate-800'
@@ -94,11 +104,28 @@ export default function AuthModal() {
             {mode === 'login' && 'Sign in to access your chats, calls & stories'}
             {mode === 'register' && 'Create your real-time chat account'}
             {mode === 'otp' && 'Verify your email address with OTP'}
+            {mode === 'forgot' && 'Reset your password via email verification code'}
+            {mode === 'reset_otp' && 'Enter your 6-digit code and choose a new password'}
           </p>
         </div>
 
+        {/* Back to sign in button for forgot password */}
+        {(mode === 'forgot' || mode === 'reset_otp') && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode('login');
+              setError('');
+              setSuccessMsg('');
+            }}
+            className="mb-4 text-xs font-bold text-emerald-400 hover:underline flex items-center gap-1"
+          >
+            ← Back to Sign In
+          </button>
+        )}
+
         {/* Mode switcher tabs */}
-        {mode !== 'otp' && (
+        {mode !== 'otp' && mode !== 'forgot' && mode !== 'reset_otp' && (
           <div
             className={`flex p-1 rounded-2xl mb-5 border ${
               isDark ? 'bg-[#121217] border-[#22222b]' : 'bg-slate-100 border-slate-200'
@@ -141,9 +168,24 @@ export default function AuthModal() {
 
         {/* Error message */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs font-semibold flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+            {mode === 'login' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('forgot');
+                  setError('');
+                  setSuccessMsg('');
+                }}
+                className="self-start text-[11px] underline font-bold text-amber-300 hover:text-amber-200 mt-0.5"
+              >
+                Forgot your password? Click here to reset it.
+              </button>
+            )}
           </div>
         )}
 
@@ -177,46 +219,61 @@ export default function AuthModal() {
             </div>
           )}
 
-          {mode !== 'otp' && (
-            <>
-              <div>
-                <label className="block text-xs font-bold mb-1 opacity-70">Email Address</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-3 opacity-40" />
-                  <input
-                    type="email"
-                    required
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
-                      isDark
-                        ? 'bg-[#14141b] border-[#252530] text-white'
-                        : 'bg-slate-50 border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
+          {(mode === 'login' || mode === 'register' || mode === 'forgot') && (
+            <div>
+              <label className="block text-xs font-bold mb-1 opacity-70">Email Address</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3.5 top-3 opacity-40" />
+                <input
+                  type="email"
+                  required
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
+                    isDark
+                      ? 'bg-[#14141b] border-[#252530] text-white'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
               </div>
+            </div>
+          )}
 
-              <div>
-                <label className="block text-xs font-bold mb-1 opacity-70">Password</label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3.5 top-3 opacity-40" />
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
-                      isDark
-                        ? 'bg-[#14141b] border-[#252530] text-white'
-                        : 'bg-slate-50 border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
+          {(mode === 'login' || mode === 'register') && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold opacity-70">Password</label>
+                {mode === 'login' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setError('');
+                      setSuccessMsg('');
+                    }}
+                    className="text-[11px] font-bold text-emerald-400 hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                )}
               </div>
-            </>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3.5 top-3 opacity-40" />
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
+                    isDark
+                      ? 'bg-[#14141b] border-[#252530] text-white'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+            </div>
           )}
 
           {mode === 'otp' && (
@@ -238,6 +295,46 @@ export default function AuthModal() {
             </div>
           )}
 
+          {mode === 'reset_otp' && (
+            <>
+              <div>
+                <label className="block text-xs font-bold mb-1 opacity-70">6-Digit Reset Code</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  placeholder="123456"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  className={`w-full text-center tracking-widest text-lg font-mono py-2.5 rounded-xl border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
+                    isDark
+                      ? 'bg-[#14141b] border-[#252530] text-white'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1 opacity-70">New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3.5 top-3 opacity-40" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter new password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl text-sm border focus:outline-hidden focus:ring-2 focus:ring-emerald-500 transition-all ${
+                      isDark
+                        ? 'bg-[#14141b] border-[#252530] text-white'
+                        : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
           <button
             type="submit"
             disabled={loading}
@@ -251,6 +348,8 @@ export default function AuthModal() {
                   {mode === 'login' && 'Sign In to Chat'}
                   {mode === 'register' && 'Create Account'}
                   {mode === 'otp' && 'Verify & Continue'}
+                  {mode === 'forgot' && 'Send Reset Code'}
+                  {mode === 'reset_otp' && 'Reset Password & Sign In'}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </>

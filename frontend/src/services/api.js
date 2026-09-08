@@ -37,6 +37,8 @@ export const authService = {
   register: (userData) => api.post('/api/auth/register', userData),
   sendOtp: (email) => api.post('/api/auth/send-otp', { email }),
   verifyOtp: (data) => api.post('/api/auth/verify-otp', data),
+  forgotPassword: (email) => api.post('/api/auth/forgot-password', { email }),
+  resetPassword: (data) => api.post('/api/auth/reset-password', data),
   getMe: () => api.get('/api/auth/me'),
 };
 
@@ -102,6 +104,16 @@ export const uploadService = {
       },
     });
   },
+};
+
+// --- WebRTC Call Signaling Service ---
+export const callService = {
+  initiateCall: (data) => api.post('/api/calls/initiate', data),
+  getIncomingCall: () => api.get('/api/calls/incoming'),
+  answerCall: (data) => api.post('/api/calls/answer', data),
+  pollCall: (callId) => api.get(`/api/calls/${callId}/poll`),
+  addCandidate: (data) => api.post('/api/calls/candidate', data),
+  endCall: (callId) => api.post('/api/calls/end', { callId }),
 };
 
 export default api;

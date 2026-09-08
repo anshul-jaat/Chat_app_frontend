@@ -277,7 +277,7 @@ export default function MessageInput({ onSendMessage, onTyping }) {
                 onChange={handleTextChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
-                className={`w-full py-2.5 px-3.5 rounded-2xl text-sm resize-none focus:outline-hidden max-h-28 transition-colors ${
+                className={`w-full py-2.5 px-3.5 rounded-2xl text-base sm:text-sm resize-none focus:outline-hidden max-h-28 transition-colors ${
                   isDark
                     ? 'bg-[#121217] text-white placeholder:text-zinc-500 border border-[#1f1f26] focus:border-emerald-500/60'
                     : 'bg-slate-100 text-slate-900 placeholder:text-slate-400 border border-slate-200 focus:border-blue-500'

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useSocket } from './SocketContext.jsx';
 import { useAuth } from './AuthContext.jsx';
-import { conversationService, messageService } from '../services/api.js';
+import { conversationService, messageService, callService } from '../services/api.js';
 import { sound } from '../utils/sound.js';
 
 const CallContext = createContext();
@@ -25,6 +25,7 @@ export const CallProvider = ({ children }) => {
   const [remoteUser, setRemoteUser] = useState(null); // remote party details
   const [callDuration, setCallDuration] = useState(0);
   const [permissionError, setPermissionError] = useState(null);
+  const [activeCallId, setActiveCallId] = useState(null);
 
   // Media streams & controls
   const [localStream, setLocalStream] = useState(null);
@@ -38,7 +39,10 @@ export const CallProvider = ({ children }) => {
   const outgoingTimeoutRef = useRef(null);
   const incomingSignalRef = useRef(null);
   const remoteTargetUserIdRef = useRef(null);
+  const activeCallIdRef = useRef(null);
   const iceCandidatesQueueRef = useRef([]);
+  const outgoingIceQueueRef = useRef([]);
+  const processedCandidateKeysRef = useRef(new Set());
 
   const callStateRef = useRef(callState);
   const callTypeRef = useRef(callType);
@@ -80,6 +84,17 @@ export const CallProvider = ({ children }) => {
     }
   };
 
+  const flushOutgoingIceCandidates = (callId) => {
+    if (!callId) return;
+    while (outgoingIceQueueRef.current.length > 0) {
+      const cand = outgoingIceQueueRef.current.shift();
+      callService.addCandidate({
+        callId,
+        candidate: cand,
+      }).catch(() => {});
+    }
+  };
+
   // Setup WebRTC PeerConnection
   const createPeerConnection = (toUserId) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -100,11 +115,21 @@ export const CallProvider = ({ children }) => {
     };
 
     pc.onicecandidate = (event) => {
-      if (event.candidate && socket) {
-        socket.emit('iceCandidate', {
-          toUserId,
-          candidate: event.candidate,
-        });
+      if (event.candidate) {
+        if (socket) {
+          socket.emit('iceCandidate', {
+            toUserId,
+            candidate: event.candidate,
+          });
+        }
+        if (activeCallIdRef.current) {
+          callService.addCandidate({
+            callId: activeCallIdRef.current,
+            candidate: event.candidate,
+          }).catch(() => {});
+        } else {
+          outgoingIceQueueRef.current.push(event.candidate);
+        }
       }
     };
 
@@ -135,73 +160,79 @@ export const CallProvider = ({ children }) => {
     }, 1000);
   };
 
+  // Handlers for call events (invoked by both Socket and REST polling)
+  const handleIncomingCall = (data) => {
+    if (callStateRef.current !== 'idle') return;
+    console.log('📞 Incoming call from:', data);
+    incomingSignalRef.current = data.signal;
+    remoteTargetUserIdRef.current = data.fromUserId;
+    if (data.callId) {
+      activeCallIdRef.current = data.callId;
+      setActiveCallId(data.callId);
+    }
+    setCallerInfo(data);
+    setCallType(data.type || 'video');
+    setRemoteUser({
+      userId: data.fromUserId,
+      username: data.callerName,
+      avatar: data.callerAvatar,
+    });
+    setCallState('incoming');
+    sound.startRingtone();
+  };
+
+  const handleCallAnswered = async (data) => {
+    console.log('✅ Call answered by remote peer');
+    if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
+    sound.stopRingtone();
+    if (pcRef.current && data.signal) {
+      try {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.signal));
+        await processQueuedIceCandidates(pcRef.current);
+        setCallState('connected');
+        startDurationTimer();
+      } catch (err) {
+        console.error('Error setting remote description on callAnswered:', err);
+      }
+    }
+  };
+
+  const handleIceCandidate = async (data) => {
+    if (!data?.candidate) return;
+    if (pcRef.current && pcRef.current.remoteDescription) {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } catch (err) {
+        console.error('Error adding received ice candidate:', err);
+      }
+    } else {
+      iceCandidatesQueueRef.current.push(data.candidate);
+    }
+  };
+
+  const handleCallRejected = () => {
+    console.log('❌ Call rejected by remote peer');
+    sound.stopRingtone();
+    sound.playEndCallSound();
+    if (callStateRef.current === 'outgoing') {
+      logMissedCall(remoteTargetUserIdRef.current, callTypeRef.current);
+    }
+    cleanupCall();
+  };
+
+  const handleCallEnded = () => {
+    console.log('⏹️ Call ended by remote peer');
+    sound.stopRingtone();
+    sound.playEndCallSound();
+    if (callStateRef.current === 'incoming') {
+      logMissedCall(remoteTargetUserIdRef.current, callTypeRef.current);
+    }
+    cleanupCall();
+  };
+
   // Socket signaling listeners
   useEffect(() => {
     if (!socket) return;
-
-    const handleIncomingCall = (data) => {
-      console.log('📞 Incoming call from:', data);
-      incomingSignalRef.current = data.signal;
-      remoteTargetUserIdRef.current = data.fromUserId;
-      setCallerInfo(data);
-      setCallType(data.type || 'video');
-      setRemoteUser({
-        userId: data.fromUserId,
-        username: data.callerName,
-        avatar: data.callerAvatar,
-      });
-      setCallState('incoming');
-      sound.startRingtone();
-    };
-
-    const handleCallAnswered = async (data) => {
-      console.log('✅ Call answered by remote peer');
-      if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
-      sound.stopRingtone();
-      if (pcRef.current && data.signal) {
-        try {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(data.signal));
-          await processQueuedIceCandidates(pcRef.current);
-          setCallState('connected');
-          startDurationTimer();
-        } catch (err) {
-          console.error('Error setting remote description on callAnswered:', err);
-        }
-      }
-    };
-
-    const handleIceCandidate = async (data) => {
-      if (!data?.candidate) return;
-      if (pcRef.current && pcRef.current.remoteDescription) {
-        try {
-          await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (err) {
-          console.error('Error adding received ice candidate:', err);
-        }
-      } else {
-        iceCandidatesQueueRef.current.push(data.candidate);
-      }
-    };
-
-    const handleCallRejected = () => {
-      console.log('❌ Call rejected by remote peer');
-      sound.stopRingtone();
-      sound.playEndCallSound();
-      if (callStateRef.current === 'outgoing') {
-        logMissedCall(remoteTargetUserIdRef.current, callTypeRef.current);
-      }
-      cleanupCall();
-    };
-
-    const handleCallEnded = () => {
-      console.log('⏹️ Call ended by remote peer');
-      sound.stopRingtone();
-      sound.playEndCallSound();
-      if (callStateRef.current === 'incoming') {
-        logMissedCall(remoteTargetUserIdRef.current, callTypeRef.current);
-      }
-      cleanupCall();
-    };
 
     socket.on('incomingCall', handleIncomingCall);
     socket.on('callAnswered', handleCallAnswered);
@@ -217,6 +248,69 @@ export const CallProvider = ({ children }) => {
       socket.off('callEnded', handleCallEnded);
     };
   }, [socket]);
+
+  // Background incoming call polling: ensures receiver gets call on serverless hosts
+  useEffect(() => {
+    if (!user) return;
+
+    const incomingPoll = setInterval(async () => {
+      if (callStateRef.current !== 'idle') return;
+      try {
+        const res = await callService.getIncomingCall();
+        if (res.data?.incomingCall && callStateRef.current === 'idle') {
+          handleIncomingCall(res.data.incomingCall);
+        }
+      } catch (err) {}
+    }, 1200);
+
+    return () => clearInterval(incomingPoll);
+  }, [user]);
+
+  // Active call polling (HTTP signaling fallback): syncs answers, remote candidates, and call termination
+  useEffect(() => {
+    if (!activeCallId || callState === 'idle') return;
+
+    const activePoll = setInterval(async () => {
+      try {
+        if (callStateRef.current === 'idle') return;
+        const res = await callService.pollCall(activeCallId);
+        const data = res.data;
+        if (!data) return;
+
+        // 1. Remote peer hung up, rejected, or call ended
+        if (data.status === 'ended' || data.status === 'rejected') {
+          if (callStateRef.current === 'outgoing') {
+            handleCallRejected();
+          } else {
+            handleCallEnded();
+          }
+          return;
+        }
+
+        // 2. Caller waiting for answer
+        if (callStateRef.current === 'outgoing' && data.status === 'connected' && data.answer) {
+          if (pcRef.current && !pcRef.current.remoteDescription) {
+            await handleCallAnswered({ signal: data.answer });
+          }
+        }
+
+        // 3. Sync remote ICE candidates
+        if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+          for (const cand of data.candidates) {
+            const key = typeof cand === 'string' ? cand : JSON.stringify(cand);
+            if (!processedCandidateKeysRef.current.has(key)) {
+              processedCandidateKeysRef.current.add(key);
+              handleIceCandidate({ candidate: cand });
+            }
+          }
+        }
+      } catch (err) {
+        // ignore transient network hiccups
+      }
+    }, 1000);
+
+    return () => clearInterval(activePoll);
+  }, [activeCallId, callState]);
 
   // Clean up all call resources
   const cleanupCall = () => {
@@ -250,7 +344,11 @@ export const CallProvider = ({ children }) => {
     setIsScreenSharing(false);
     incomingSignalRef.current = null;
     remoteTargetUserIdRef.current = null;
+    activeCallIdRef.current = null;
+    setActiveCallId(null);
     iceCandidatesQueueRef.current = [];
+    outgoingIceQueueRef.current = [];
+    processedCandidateKeysRef.current.clear();
   };
 
   // Initiate outgoing call
@@ -296,11 +394,29 @@ export const CallProvider = ({ children }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit('callUser', {
-        toUserId: targetUserId,
-        signal: offer,
-        type: actualType,
-      });
+      if (socket) {
+        socket.emit('callUser', {
+          toUserId: targetUserId,
+          signal: offer,
+          type: actualType,
+        });
+      }
+
+      // Dual HTTP signaling: guarantees call reaches other user even without WebSockets!
+      try {
+        const initRes = await callService.initiateCall({
+          toUserId: targetUserId,
+          type: actualType,
+          signal: offer,
+        });
+        if (initRes.data?.callId) {
+          activeCallIdRef.current = initRes.data.callId;
+          setActiveCallId(initRes.data.callId);
+          flushOutgoingIceCandidates(initRes.data.callId);
+        }
+      } catch (restErr) {
+        console.warn('Call initiate HTTP failed:', restErr);
+      }
 
       // Timeout after 35 seconds of no answer -> auto cancel and log missed call
       if (outgoingTimeoutRef.current) clearTimeout(outgoingTimeoutRef.current);
@@ -366,10 +482,20 @@ export const CallProvider = ({ children }) => {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        socket.emit('answerCall', {
-          toUserId: remoteTargetUserIdRef.current,
-          signal: answer,
-        });
+        if (socket) {
+          socket.emit('answerCall', {
+            toUserId: remoteTargetUserIdRef.current,
+            signal: answer,
+          });
+        }
+
+        if (activeCallIdRef.current) {
+          callService.answerCall({
+            callId: activeCallIdRef.current,
+            signal: answer,
+          }).catch(() => {});
+          flushOutgoingIceCandidates(activeCallIdRef.current);
+        }
 
         setCallState('connected');
         startDurationTimer();
@@ -389,6 +515,9 @@ export const CallProvider = ({ children }) => {
       if (socket) {
         socket.emit('rejectCall', { toUserId: remoteTargetUserIdRef.current });
       }
+      if (activeCallIdRef.current) {
+        callService.endCall(activeCallIdRef.current).catch(() => {});
+      }
     }
     sound.stopRingtone();
     cleanupCall();
@@ -401,6 +530,9 @@ export const CallProvider = ({ children }) => {
     }
     if (remoteTargetUserIdRef.current && socket) {
       socket.emit('endCall', { toUserId: remoteTargetUserIdRef.current });
+    }
+    if (activeCallIdRef.current) {
+      callService.endCall(activeCallIdRef.current).catch(() => {});
     }
     sound.playEndCallSound();
     cleanupCall();
