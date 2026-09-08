@@ -1,0 +1,23 @@
+{
+  "name": "chat_app_frontend",
+  "version": "1.0.0",
+  "description": "frontend/\r    ├── src/\r    │   ├── components/\r    │   ├── pages/\r    │   ├── hooks/\r    │   ├── services/\r    │   ├── context/\r    │   └── utils/\r    └── package.json",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anshul-jaat/Chat_app_frontend.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/anshul-jaat/Chat_app_frontend/issues"
+  },
+  "homepage": "https://github.com/anshul-jaat/Chat_app_frontend#readme",
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}
